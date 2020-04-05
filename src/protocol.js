@@ -1,57 +1,97 @@
-const LZUTF8 = require('lzutf8');
-const { EVENTS, BINARY } = require('./constants');
+const { register, types } = require('bintocol-node');
 
-const { MASK_2, MASK_3, MASK_4, MASK_6 } = BINARY.MASKS;
-const { ARRAY, OBJECT, UINT } = BINARY.TYPES;
+const { EVENTS } = require('./constants');
 
-const formats = {
-  [EVENTS.TICK]: {
-    players: {
-      type: ARRAY,
-      lengthSize: 0,
-      content: {
-        type: OBJECT,
-        schema: {
-          x: { type: UINT, size: 10 },
-          y: { type: UINT, size: 10 },
-          turning: { type: UINT, size: 2 },
-          radius: { type: UINT, size: 2 },
-          direction: { type: UINT, size: 16 },
-          speed: { type: UINT, size: 2 },
+const { NOTHING, OBJECT, ARRAY, UINT, BOOL } = types;
+
+const registerPing = () => register({
+  event: EVENTS.PING,
+  body: { type: NOTHING },
+});
+
+const registerPong = () => register({
+  event: EVENTS.PONG,
+  body: { type: NOTHING },
+});
+
+const registerTick = () => register({
+  event: EVENTS.TICK,
+  body: {
+    type: OBJECT,
+    schema: {
+      players: {
+        type: ARRAY,
+        lengthSize: 3,
+        content: {
+          type: OBJECT,
+          schema: {
+            x: { type: UINT, size: 13 },
+            y: { type: UINT, size: 13 },
+            turning: { type: UINT, size: 2 },
+            radius: { type: UINT, size: 2 },
+            direction: { type: UINT, size: 16 },
+            speed: { type: UINT, size: 2 },
+          },
+        },
+      },
+      diff: {
+        type: ARRAY,
+        lengthSize: 14,
+        content: {
+          type: OBJECT,
+          schema: {
+            location: {
+              type: UINT,
+              size: 19,
+            },
+            value: {
+              type: UINT,
+              size: 3,
+            },
+          },
         },
       },
     },
   },
+});
+
+const registerJoinAsSpectator = () => register({
+  event: EVENTS.JOIN_AS_SPECTATOR,
+  body: { type: NOTHING },
+});
+
+const registerJoinAsPlayer = () => register({
+  event: EVENTS.JOIN_AS_PLAYER,
+  body: { type: NOTHING },
+});
+
+const registerPlayGame = () => register({
+  event: EVENTS.PLAY_GAME,
+  body: { type: NOTHING },
+});
+
+const registerInput = () => register({
+  event: EVENTS.INPUT,
+  body: {
+    type: OBJECT,
+    schema: {
+      key: {
+        type: UINT,
+        size: 1,
+      },
+      isPressed: { type: BOOL },
+    },
+  },
+});
+
+module.exports = {
+  registerEvents: function() {
+    registerPing();
+    registerPong();
+    registerTick();
+    registerJoinAsPlayer();
+    registerJoinAsSpectator();
+    registerPlayGame();
+    registerInput();
+  },
 };
-
-const encode = (payload, options) => {
-  const { event, data } = payload;
-  const isJson = !!options.json;
-  let isCompressed = false;
-  let headerByte = 0;
-  headerByte |= isJson << 7;
-  headerByte |= event & MASK_6;
-  if (isJson) {
-    const uncompressed = Buffer.from(JSON.stringify(data));
-    const compressed = LZUTF8.compress(string);
-    isCompressed = compressed.length < uncompressed.length;
-    headerByte |= isCompressed << 6;
-    const headerBuf = Buffer.from([headerByte]);
-    const dataBuf = isCompressed ? compressed : uncompressed;
-    return Buffer.concat([headerBuf, dataBuf]);
-  }
-  const headerBuf = Buffer.from([headerByte]);
-  let offset = 0;
-  let bits = 0;
-  let byte = 0;
-  const format = formats[event]
-}
-
-const decode = buffer => {
-  const headerByte = buffer[0];
-
-}
-
-// encode isJson (1 bit)
-// encode isCompressed (1 bit)
-// encode event type (6 bits)

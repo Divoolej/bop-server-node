@@ -1,39 +1,23 @@
 module.exports = {
-  BINARY: {
-    TYPES: {
-      ARRAY: 'ARRAY',
-      OBJECT: 'OBJECT',
-      UINT: 'UINT',
-    },
-    MASKS: {
-      MASK_2: 3,
-      MASK_3: 7,
-      MASK_4: 15,
-      MASK_6: 63,
-      MASK_19: 524287,
-    },
-  },
   EVENTS: {
-    PING: 'PING',
-    PONG: 'PONG',
-    LOBBY_JOIN: 'LOBBY_JOIN',
-    JOIN_AS_PLAYER: 'JOIN_AS_PLAYER',
-    JOIN_AS_SPECTATOR: 'JOIN_AS_SPECTATOR',
-    UPDATE_LOBBY: 'UPDATE_LOBBY',
-    PLAY_GAME: 'PLAY_GAME',
-    INPUT: 'INPUT',
-    TICK: 'TICK',
+    PING: 0,
+    PONG: 1,
+    JOIN_AS_PLAYER: 2,
+    JOIN_AS_SPECTATOR: 3,
+    UPDATE_LOBBY: 4,
+    PLAY_GAME: 5,
+    INPUT: 6,
+    TICK: 7,
   },
   STATE: {
     LOBBY: 'LOBBY',
     GAME: 'GAME',
   },
   INPUT: {
-    LEFT: 'LEFT',
-    RIGHT: 'RIGHT',
+    LEFT: 0,
+    RIGHT: 1,
   },
   MAX_PLAYERS: 4,
-  STATE_LOBBY: 'STATE_LOBBY',
   BOARD: {
     SIZE: 720,
     EMPTY: 0,
@@ -75,4 +59,5 @@ module.exports = {
     HEIGHT: 36,
     IMAGE_OFFSET: 10,
   },
+  DIRECTION_PRECISION: 10000,
 };

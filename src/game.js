@@ -1,5 +1,6 @@
 const { performance } = require('perf_hooks');
-const LZUTF8 = require('lzutf8');
+const Bintocol = require('bintocol-node');
+
 const {
   MAX_PLAYERS,
   STATE,
@@ -9,12 +10,12 @@ const {
   RADIUS,
   INPUT,
   PLAYER,
-  BINARY,
+  DIRECTION_PRECISION,
 } = require('./constants');
-const bot = require('./bot');
+const { registerEvents } = require('./protocol');
 const { json, distance, overlap } = require('./utils');
+const bot = require('./bot');
 
-const { MASK_2, MASK_3, MASK_4, MASK_6 } = BINARY;
 const rooms = {};
 
 const game = {
@@ -29,53 +30,35 @@ const game = {
   }),
 
   tickState: (players, diff) => {
-    const buf = Buffer.alloc(players.length * 6 + Object.keys(diff).length * 3);
-    let offset = 0;
-    players.forEach(player => {
-      const data = {
-        x: (player.x + 0.5) | 0,
-        y: (player.y + 0.5) | 0,
-        vAngle: Math.round((Math.atan2(-player.velocity.y, player.velocity.x) + 2 * Math.PI) % (2 * Math.PI) * 10000),
-        vMagnitude: player.velocity.type,
-        radius: player.radius.type,
-        angularVelocity: player.angularVelocity.type,
-      };
-      buf.writeUInt8(data.x >> 2, offset++);
-      buf.writeUInt8(((data.x & MASK_2) << 6) | ((data.y >> 4) & MASK_6), offset++);
-      buf.writeUInt8(((data.y & MASK_4) << 4) | ((data.radius & MASK_2) << 2) | (data.angularVelocity & MASK_2), offset++);
-      offset = buf.writeUInt16BE(data.vAngle, offset);
-      buf.writeUInt8(data.vMagnitude, offset++);
-    });
-    for (location in diff) {
-      offset = buf.writeUInt16BE(location >> 3, offset);
-      buf.writeUInt8(((location & MASK_3) << 3) | (diff[location] & MASK_3), offset++);
-    }
-    return buf;
-  },
-  //   data: {
-  //     players: players.map(p => ({
-  //       x: (p.x + 0.5) | 0,
-  //       y: (p.y + 0.5) | 0,
-  //       velocity: p.velocity,
-  //       radius: p.radius,
-  //       angularVelocity: p.angularVelocity,
-  //     })),
-  //     diff,
-  //   }
-  // }),
-
-  broadcast: function(roomId, payload) {
-    const data = typeof payload === 'object' ? json(payload) : payload;
-    // const uncompressed = json(payload);
-    // const compressed = LZUTF8.compress(uncompressed, { outputEncoding: 'Base64' });
-    // const data = (compressed.length < uncompressed.length)
-    //   ? ({ timestamp: Date.now(), compressed: true, content: compressed, })
-    //   : ({ timestamp: Date.now(), compressed: false, content: payload });
-    Object.values(rooms[roomId].clients)
-          .forEach(client => client.send(data));
+    const data = {};
+    data.players = players.map(player => ({
+      x: (player.x * 10 + 0.5) | 0,
+      y: (player.y * 10 + 0.5) | 0,
+      direction: Math.round(
+        (Math.atan2(-player.velocity.y, player.velocity.x) + 2 * Math.PI)
+          % (2 * Math.PI) * DIRECTION_PRECISION
+      ),
+      speed: player.velocity.type,
+      radius: player.radius.type,
+      turning: player.angularVelocity.type,
+    }));
+    data.diff = Object.keys(diff).map(location => ({
+      location,
+      value: diff[location],
+    }));
+    return data;
   },
 
-  onConnect: function(ws, request) {
+  broadcast: function(roomId, payload, options = { compress: 'auto', json: false }) {
+    const message = Bintocol.encode(payload, options);
+    Object.values(rooms[roomId].clients).forEach(client => client.send(message));
+  },
+
+  configure: function() {
+    registerEvents();
+  },
+
+  handleConnection: function(ws, request) {
     const params = new URLSearchParams(
       request.url.startsWith('/') ? request.url.slice(1) : request.url
     );
@@ -94,7 +77,7 @@ const game = {
             `${response.data.result.first_name} ${response.data.result.last_name}`;
           const user = { id: userId, name };
           this.joinRoom(roomId, user, ws);
-          ws.on('message', msg => this.onMessage(roomId, user, JSON.parse(msg)));
+          ws.on('message', msg => this.handleEvent(roomId, user, Bintocol.decode(msg)));
           ws.on('close', () => this.leaveRoom(roomId, user));
         })
         .catch(error => {
@@ -104,11 +87,13 @@ const game = {
     }
   },
 
-  onMessage: function(roomId, user, message) {
+  handleEvent: function(roomId, user, message) {
     const { event, data } = message;
     switch (event) {
       case EVENTS.PING:
-        rooms[roomId].clients[user.id].send(json({ compressed: false, content: { event: EVENTS.PONG } }));
+        rooms[roomId].clients[user.id].send(
+          Bintocol.encode({ event: EVENTS.PONG }, { compressed: false })
+        );
         break;
       case EVENTS.JOIN_AS_SPECTATOR:
         this.joinAsSpectator(roomId, user);
@@ -164,12 +149,13 @@ const game = {
     for (let i = 0; i < BOARD.SIZE * BOARD.SIZE; i++) {
       room.board[i] = 0;
     }
-    this.broadcast(roomId, {
-      event: EVENTS.PLAY_GAME,
-      ...this.state(room),
-    });
+    this.broadcast(
+      roomId,
+      { event: EVENTS.PLAY_GAME, ...this.state(room) },
+      { json: true, compress: true }
+    );
     room.lastUpdateTime = performance.now();
-    setTimeout(() => this.update(roomId), 20);
+    setTimeout(() => this.update(roomId), 10);
   },
 
   processInput: function(roomId, user, data) {
@@ -184,9 +170,15 @@ const game = {
     if (player.input.left && player.input.right) {
       player.angularVelocity = VELOCITY.ANGULAR.NONE;
     } else if (player.input.left) {
-      player.angularVelocity = -VELOCITY.ANGULAR.NORMAL;
+      player.angularVelocity = {
+        ...VELOCITY.ANGULAR.NORMAL,
+        value: -VELOCITY.ANGULAR.NORMAL.value,
+      };
     } else if (player.input.right) {
-      player.angularVelocity = VELOCITY.ANGULAR.NORMAL;
+      player.angularVelocity = {
+        ...VELOCITY.ANGULAR.NORMAL,
+        value: VELOCITY.ANGULAR.NORMAL.value,
+      };
     } else {
       player.angularVelocity = VELOCITY.ANGULAR.NONE;
     }
@@ -279,7 +271,7 @@ const game = {
       };
     });
 
-    this.broadcast(roomId, this.tickState(players, diff));
+    this.broadcast(roomId, { event: EVENTS.TICK, data: this.tickState(players, diff) });
     setTimeout(() => this.update(roomId), 20);
   },
 
@@ -301,14 +293,6 @@ const game = {
     return diff;
   },
 
-  sendBoard: function(roomId) {
-    const room = rooms[roomId];
-    const { board } = room;
-
-    this.broadcast(roomId, { event: EVENTS.TICK, data: { board } });
-    setTimeout(() => this.sendBoard(roomId), 1000);
-  },
-
   joinAsPlayer: function(roomId, user) {
     const room = rooms[roomId];
     const { owner, players, spectators, state, clients } = room;
@@ -327,10 +311,11 @@ const game = {
       console.info('User', user.name, 'joined room', roomId, 'as a player.');
     }
 
-    this.broadcast(roomId, {
-      event: EVENTS.UPDATE_LOBBY,
-      ...this.state(room),
-    });
+    this.broadcast(
+      roomId,
+      { event: EVENTS.UPDATE_LOBBY,...this.state(room) },
+      { json: true, compress: 'auto' },
+    );
     return true;
   },
 
@@ -347,10 +332,11 @@ const game = {
     spectators.push(user);
     console.info('User', user.name, 'joined room', roomId, 'as a spectator.');
 
-    this.broadcast(roomId, {
-      event: EVENTS.UPDATE_LOBBY,
-      ...this.state(room),
-    });
+    this.broadcast(
+      roomId,
+      { event: EVENTS.UPDATE_LOBBY,...this.state(room) },
+      { json: true, compress: 'auto' },
+    );
   },
 
   joinRoom: function(roomId, user, socket) {
@@ -384,13 +370,14 @@ const game = {
       room.spectators = spectators.filter(s => s.id !== user.id);
       console.info('User', user.name, '(spectator) left room', roomId);
     }
-    this.broadcast(roomId, {
-      event: EVENTS.UPDATE_LOBBY,
-      ...this.state(room),
-    });
+    this.broadcast(
+      roomId,
+      { event: EVENTS.UPDATE_LOBBY,...this.state(room) },
+      { json: true, compress: 'auto' },
+    );
   },
 };
 
-game.onConnect = game.onConnect.bind(game);
+game.handleConnection = game.handleConnection.bind(game);
 
 module.exports = game;

@@ -4,6 +4,7 @@ const chalk = require('chalk');
 const WebSocket = require('ws');
 
 const router = require('./router');
+const game = require('./game');
 
 const DEFAULT_PORT = 3000;
 
@@ -19,6 +20,7 @@ const server = {
     this.runHTTPS = this.runHTTPS.bind(this);
     this.runWSS = this.runWSS.bind(this);
   },
+
   runHTTPS: function() {
     return new Promise((resolve, reject) => {
       this.server.on('listening', () => {
@@ -34,6 +36,7 @@ const server = {
       });
     });
   },
+
   runWSS: function() {
     return new Promise((resolve, reject) => {
       this.wss.on('listening', () => {
@@ -47,9 +50,10 @@ const server = {
         this.wss.close();
         reject(chalk.red.bold("- Error starting up WebSocket server:\n") + chalk.red(error));
       });
-      this.wss.on('connection', this.config.onConnect)
+      this.wss.on('connection', game.handleConnection)
     })
   },
+
   listen: function() {
     const promise = Promise.all([this.runHTTPS(), this.runWSS()]);
     const port = this.config.port || DEFAULT_PORT;

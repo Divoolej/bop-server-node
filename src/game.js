@@ -10,7 +10,6 @@ const {
   RADIUS,
   INPUT,
   PLAYER,
-  DIRECTION_PRECISION,
 } = require('./constants');
 const { registerEvents } = require('./protocol');
 const { json, distance, overlap } = require('./utils');
@@ -19,28 +18,37 @@ const bot = require('./bot');
 const rooms = {};
 
 const game = {
-  state: room => ({
+  gameState: room => ({
+    data: {
+      players: room.players.map(p => ({
+        id: p.id,
+        x: p.x,
+        y: p.y,
+        radius: p.radius.value,
+        tile: p.tile,
+      })),
+      board: room.board,
+    },
+  }),
+
+  lobbyState: room => ({
     data: {
       owner: room.owner,
       state: room.state,
-      players: room.players,
+      players: room.players.map(p => ({
+        id: p.id,
+        name: p.name,
+      })),
       spectators: room.spectators,
-      board: room.board,
-    },
+    }
   }),
 
   tickState: (players, diff) => {
     const data = {};
     data.players = players.map(player => ({
-      x: (player.x * 10 + 0.5) | 0,
-      y: (player.y * 10 + 0.5) | 0,
-      direction: Math.round(
-        (Math.atan2(-player.velocity.y, player.velocity.x) + 2 * Math.PI)
-          % (2 * Math.PI) * DIRECTION_PRECISION
-      ),
-      speed: player.velocity.type,
+      x: (player.x + 0.5) | 0,
+      y: (player.y + 0.5) | 0,
       radius: player.radius.type,
-      turning: player.angularVelocity.type,
     }));
     data.diff = Object.keys(diff).map(location => ({
       location,
@@ -119,7 +127,7 @@ const game = {
       state: STATE.LOBBY,
       players: [],
       spectators: [],
-      board: [], // Buffer.alloc(BOARD.SIZE * BOARD.SIZE),
+      board: [],
       clients: {},
     };
     console.info('Room', roomId, 'created by user:', owner.name);
@@ -127,11 +135,11 @@ const game = {
 
   playGame: function(roomId, user) {
     const room = rooms[roomId];
-    const { owner, state, board } = room;
+    const { owner, state, board, players } = room;
     if (owner.id !== user.id || state !== STATE.LOBBY)
       return;
     room.state = STATE.GAME;
-    room.players = room.players.map((player, index) => ({
+    room.players = players.map((player, index) => ({
       index,
       id: player.id,
       x: (BOARD.SIZE / 2 - 50) + 100 * (index % 2),
@@ -151,11 +159,11 @@ const game = {
     }
     this.broadcast(
       roomId,
-      { event: EVENTS.PLAY_GAME, ...this.state(room) },
+      { event: EVENTS.PLAY_GAME, data: { ...this.gameState(room).data, board: [] } },
       { json: true, compress: true }
     );
     room.lastUpdateTime = performance.now();
-    setTimeout(() => this.update(roomId), 10);
+    setTimeout(() => this.update(roomId), 16);
   },
 
   processInput: function(roomId, user, data) {
@@ -230,14 +238,14 @@ const game = {
           player.velocity.x = tangent.x * dpTan1 + normal.x * dpNorm2;
           player.velocity.y = tangent.y * dpTan1 + normal.y * dpNorm2;
           const angle1 = Math.atan2(player.velocity.y, player.velocity.x);
-          player.velocity.x = Math.cos(angle1) * VELOCITY.LINEAR.NORMAL;
-          player.velocity.y = Math.sin(angle1) * VELOCITY.LINEAR.NORMAL;
+          player.velocity.x = Math.cos(angle1) * VELOCITY.LINEAR.NORMAL.value;
+          player.velocity.y = Math.sin(angle1) * VELOCITY.LINEAR.NORMAL.value;
 
           otherPlayer.velocity.x = tangent.x * dpTan2 + normal.x * dpNorm1;
           otherPlayer.velocity.y = tangent.y * dpTan2 + normal.y * dpNorm1;
           const angle2 = Math.atan2(otherPlayer.velocity.y, otherPlayer.velocity.x);
-          otherPlayer.velocity.x = Math.cos(angle2) * VELOCITY.LINEAR.NORMAL;
-          otherPlayer.velocity.y = Math.sin(angle2) * VELOCITY.LINEAR.NORMAL;
+          otherPlayer.velocity.x = Math.cos(angle2) * VELOCITY.LINEAR.NORMAL.value;
+          otherPlayer.velocity.y = Math.sin(angle2) * VELOCITY.LINEAR.NORMAL.value;
 
           const displacement = {
             x: ((p1.x - p2.x) / dist) * (PLAYER.WIDTH - dist + 1),
@@ -313,13 +321,13 @@ const game = {
 
     this.broadcast(
       roomId,
-      { event: EVENTS.UPDATE_LOBBY,...this.state(room) },
+      { event: EVENTS.UPDATE_LOBBY,...this.lobbyState(room) },
       { json: true, compress: 'auto' },
     );
     return true;
   },
 
-  joinAsSpectator: function(roomId, user) {
+  joinAsSpectator: function(roomId, user, socket) {
     const room = rooms[roomId];
     const { spectators, owner, players, state, clients } = room;
 
@@ -332,11 +340,19 @@ const game = {
     spectators.push(user);
     console.info('User', user.name, 'joined room', roomId, 'as a spectator.');
 
-    this.broadcast(
-      roomId,
-      { event: EVENTS.UPDATE_LOBBY,...this.state(room) },
-      { json: true, compress: 'auto' },
-    );
+    if (state === STATE.LOBBY) {
+      this.broadcast(
+        roomId,
+        { event: EVENTS.UPDATE_LOBBY,...this.lobbyState(room) },
+        { json: true, compress: 'auto' },
+      );
+    } else {
+      const message = Bintocol.encode(
+        { event: EVENTS.PLAY_GAME,...this.gameState(room), },
+        { compress: true, json: true }
+      );
+      socket.send(message);
+    }
   },
 
   joinRoom: function(roomId, user, socket) {
@@ -346,8 +362,8 @@ const game = {
       return;
     clients[user.id] = socket;
     if (players.concat(spectators).find(u => u.id === user.id))
-      return;
-    this.joinAsPlayer(roomId, user) || this.joinAsSpectator(roomId, user);
+      return this.reconnectUser(roomId, user, socket);
+    this.joinAsPlayer(roomId, user) || this.joinAsSpectator(roomId, user, socket);
   },
 
   leaveRoom: function(roomId, user) {
@@ -369,13 +385,25 @@ const game = {
     } else if (spectators.find(s => s.id === user.id)) {
       room.spectators = spectators.filter(s => s.id !== user.id);
       console.info('User', user.name, '(spectator) left room', roomId);
+    } else {
+      console.info('User', user.name, 'disconnected from room', roomId);
     }
     this.broadcast(
       roomId,
-      { event: EVENTS.UPDATE_LOBBY,...this.state(room) },
+      { event: EVENTS.UPDATE_LOBBY,...this.lobbyState(room) },
       { json: true, compress: 'auto' },
     );
   },
+
+  reconnectUser: function(roomId, user, socket) {
+    const room = rooms[roomId];
+    console.info('User', user.name, 'reconnected to the room', roomId);
+    const message = Bintocol.encode(
+      { event: EVENTS.PLAY_GAME,...this.gameState(room), },
+      { compress: true, json: true }
+    );
+    socket.send(message);
+  }
 };
 
 game.handleConnection = game.handleConnection.bind(game);

@@ -25,12 +25,9 @@ const registerTick = () => register({
         content: {
           type: OBJECT,
           schema: {
-            x: { type: UINT, size: 13 },
-            y: { type: UINT, size: 13 },
-            turning: { type: UINT, size: 2 },
+            x: { type: UINT, size: 10 },
+            y: { type: UINT, size: 10 },
             radius: { type: UINT, size: 2 },
-            direction: { type: UINT, size: 16 },
-            speed: { type: UINT, size: 2 },
           },
         },
       },

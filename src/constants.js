@@ -59,5 +59,4 @@ module.exports = {
     HEIGHT: 36,
     IMAGE_OFFSET: 10,
   },
-  DIRECTION_PRECISION: 10000,
 };

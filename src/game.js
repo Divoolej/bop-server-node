@@ -446,7 +446,7 @@ const game = {
     room.state = STATE.LEADERBOARDS;
     this.broadcast(
       roomId,
-      { event: EVENTS.GAME_FINISHED, data: leaderboards },
+      { event: EVENTS.GAME_FINISHED, data: room.leaderboards },
       { compress: false, json: true },
     )
     // TODO: Archive room to redis

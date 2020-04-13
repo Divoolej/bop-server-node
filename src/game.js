@@ -10,6 +10,7 @@ const {
   RADIUS,
   INPUT,
   PLAYER,
+  TIMER,
 } = require('./constants');
 const { registerEvents } = require('./protocol');
 const { json, distance, overlap } = require('./utils');
@@ -43,8 +44,11 @@ const game = {
     }
   }),
 
-  tickState: (players, diff) => {
+  tickState: (roomId, diff) => {
+    const room = rooms[roomId];
+    const players = room.players;
     const data = {};
+    data.timer = (room.timer + 0.5) | 0;
     data.players = players.map(player => ({
       x: (player.x + 0.5) | 0,
       y: (player.y + 0.5) | 0,
@@ -140,6 +144,7 @@ const game = {
     if (owner.id !== user.id || state !== STATE.LOBBY)
       return;
     room.state = STATE.GAME;
+    room.timer = TIMER;
     room.players = players.map((player, index) => ({
       index,
       id: player.id,
@@ -212,6 +217,11 @@ const game = {
     const now = performance.now()
     const dt = (now - room.lastUpdateTime) / 1000;
     room.lastUpdateTime = now;
+    room.timer -= dt;
+
+    if (room.timer <= 0) {
+      return this.finishGame(roomId);
+    }
 
     players.forEach(player => {
       const { x, y, velocity, angularVelocity, radius, tile } = player;
@@ -293,7 +303,7 @@ const game = {
       };
     });
 
-    this.broadcast(roomId, { event: EVENTS.TICK, data: this.tickState(players, diff) });
+    this.broadcast(roomId, { event: EVENTS.TICK, data: this.tickState(roomId, diff) });
     setTimeout(() => this.update(roomId), 16);
   },
 
@@ -414,10 +424,25 @@ const game = {
     console.info('User', user.name, 'reconnected to the room', roomId);
     const message = Bintocol.encode(
       { event: EVENTS.PLAY_GAME,...this.gameState(room), },
-      { compress: true, json: true }
+      { compress: true, json: true },
     );
     socket.send(message);
-  }
+  },
+
+  finishGame: function(roomId) {
+    const room = rooms[roomId];
+    const leaderboards = room.board.reduce((leaderboards, pixel) => {
+      leaderboards[pixel] = (leaderboards[pixel] || 0) + 1;
+      return leaderboards;
+    }, {});
+    room.state = STATE.LEADERBOARDS;
+    this.broadcast(
+      roomId,
+      { event: EVENTS.GAME_FINISHED, data: leaderboards },
+      { compress: false, json: true },
+    )
+    // TODO: Archive room to redis
+  },
 };
 
 game.handleConnection = game.handleConnection.bind(game);

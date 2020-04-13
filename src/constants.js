@@ -1,4 +1,5 @@
 module.exports = {
+  TIMER: 2 * 60,
   EVENTS: {
     PING: 0,
     PONG: 1,
@@ -9,10 +10,12 @@ module.exports = {
     INPUT: 6,
     TICK: 7,
     COUNTDOWN: 8,
+    GAME_FINISHED: 9,
   },
   STATE: {
     LOBBY: 'LOBBY',
     GAME: 'GAME',
+    LEADERBOARDS: 'LEADERBOARDS',
   },
   INPUT: {
     LEFT: 0,

@@ -19,6 +19,7 @@ const registerTick = () => register({
   body: {
     type: OBJECT,
     schema: {
+      timer: { type: UINT, size: 7 },
       players: {
         type: ARRAY,
         lengthSize: 3,

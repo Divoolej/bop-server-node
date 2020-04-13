@@ -8,6 +8,7 @@ module.exports = {
     PLAY_GAME: 5,
     INPUT: 6,
     TICK: 7,
+    COUNTDOWN: 8,
   },
   STATE: {
     LOBBY: 'LOBBY',

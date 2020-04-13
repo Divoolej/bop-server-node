@@ -99,9 +99,10 @@ const game = {
     const { event, data } = message;
     switch (event) {
       case EVENTS.PING:
-        rooms[roomId].clients[user.id].send(
-          Bintocol.encode({ event: EVENTS.PONG }, { compressed: false })
-        );
+        if (rooms[roomId].clients[user.id]) {
+          rooms[roomId].clients[user.id]
+            .send(Bintocol.encode({ event: EVENTS.PONG }, { compressed: false }));
+        }
         break;
       case EVENTS.JOIN_AS_SPECTATOR:
         this.joinAsSpectator(roomId, user);
@@ -157,13 +158,26 @@ const game = {
     for (let i = 0; i < BOARD.SIZE * BOARD.SIZE; i++) {
       room.board[i] = 0;
     }
-    this.broadcast(
-      roomId,
-      { event: EVENTS.PLAY_GAME, data: { ...this.gameState(room).data, board: [] } },
-      { json: true, compress: true }
-    );
-    room.lastUpdateTime = performance.now();
-    setTimeout(() => this.update(roomId), 16);
+
+    this.broadcast(roomId, {
+      event: EVENTS.PLAY_GAME,
+      data: { ...this.gameState(room).data, board: [], },
+    }, { json: true, compress: true });
+
+    room.countdownTimer = 6;
+    room.countdownInterval = setInterval(() => {
+      room.countdownTimer -= 1;
+      if (room.countdownTimer === 0) {
+        clearInterval(room.countdownInterval);
+        room.lastUpdateTime = performance.now();
+        setTimeout(() => this.update(roomId), 16);
+      } else {
+        this.broadcast(roomId,
+          { event: EVENTS.COUNTDOWN, data: room.countdownTimer },
+          { json: true, compress: false },
+        );
+      }
+    }, 1000);
   },
 
   processInput: function(roomId, user, data) {
@@ -280,7 +294,7 @@ const game = {
     });
 
     this.broadcast(roomId, { event: EVENTS.TICK, data: this.tickState(players, diff) });
-    setTimeout(() => this.update(roomId), 20);
+    setTimeout(() => this.update(roomId), 16);
   },
 
   paintBoard: function(roomId, x, y, radius, tile) {

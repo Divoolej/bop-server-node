@@ -81,6 +81,7 @@ const game = {
     ));
     const room = rooms[roomId];
     if (!room) {
+      // TODO: Search for the archived room in redis
       ws.send(json({ error: 'Room not found' }));
     } else {
       bot.getUser(userId)
@@ -382,7 +383,14 @@ const game = {
   joinRoom: function(roomId, user, socket) {
     const room = rooms[roomId];
     const { owner, players, spectators, state, clients } = room;
-    if (clients[user.id])
+    if (state === STATE.LEADERBOARDS) {
+      const message = Bintocol.encode(
+        { event: EVENTS.GAME_FINISHED, data: room.leaderboards },
+        { compress: false, json: true },
+      );
+      return socket.send(message);
+    }
+    if (clients[user.id]) // TODO: send warning message that the user is already connected in a different window
       return;
     clients[user.id] = socket;
     if (players.concat(spectators).find(u => u.id === user.id))
@@ -431,7 +439,7 @@ const game = {
 
   finishGame: function(roomId) {
     const room = rooms[roomId];
-    const leaderboards = room.board.reduce((leaderboards, pixel) => {
+    room.leaderboards = room.board.reduce((leaderboards, pixel) => {
       leaderboards[pixel] = (leaderboards[pixel] || 0) + 1;
       return leaderboards;
     }, {});

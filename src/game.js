@@ -439,8 +439,14 @@ const game = {
 
   finishGame: function(roomId) {
     const room = rooms[roomId];
-    room.leaderboards = room.board.reduce((leaderboards, pixel) => {
-      leaderboards[pixel] = (leaderboards[pixel] || 0) + 1;
+    room.leaderboards = room.board.reduce((leaderboards, tile) => {
+      if (tile === BOARD.EMPTY) {
+        leaderboards[tile] = (leaderboards[tile] || 0) + 1;
+      } else {
+        const player = room.players.find(p => p.tile === tile);
+        leaderboards[tile] = leaderboards[tile] || { value : 0, name: player.name };
+        leaderboards[tile].value += 1;
+      }
       return leaderboards;
     }, {});
     room.state = STATE.LEADERBOARDS;

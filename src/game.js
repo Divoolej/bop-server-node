@@ -149,6 +149,7 @@ const game = {
     room.players = players.map((player, index) => ({
       index,
       id: player.id,
+      name: player.name,
       x: (BOARD.SIZE / 2 - 50) + 100 * (index % 2),
       y: (BOARD.SIZE / 2 - 50) + 100 * (index < 2 ? 0 : 1),
       radius: RADIUS.NORMAL,
